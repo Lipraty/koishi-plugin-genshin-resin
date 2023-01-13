@@ -1,0 +1,34 @@
+{
+  "name": "koishi-plugin-genshin-resin",
+  "description": "GenshinImpact resin manage",
+  "version": "0.0.1",
+  "repository": "https://github.com/Lipraty/koishi-plugin-genshin-resin",
+  "author": "Lipraty <i@lonay.me>",
+  "main": "lib/index.js",
+  "typings": "lib/index.d.ts",
+  "files": [
+    "lib",
+    "dist"
+  ],
+  "license": "MIT",
+  "koishi": {
+    "description": {
+      "zh": "记录并计算树脂溢出时间，无需 Cookie 等配置"
+    },
+    "preview": true
+  },
+  "scripts": {},
+  "keywords": [
+    "chatbot",
+    "koishi",
+    "plugin",
+    "genshin",
+    "yuanshen"
+  ],
+  "peerDependencies": {
+    "koishi": "^4.11.1"
+  },
+  "dependencies": {
+    "node-cron": "^3.0.2"
+  }
+}
