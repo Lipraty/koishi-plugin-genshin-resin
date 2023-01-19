@@ -1,0 +1,17 @@
+commands:
+  resin:
+    description: 记录或获取树脂
+    msg: 
+      errorNum: 错误的树脂数量，上限为 160 个
+      errorMany: 短时间内请不要重复提交
+      saved: 
+        content: 保存成功！你当前树脂为 {0} 个。\n将在{2} {3} 时 {4} 分恢复到 {1} 个并提醒你。
+        today: 当日
+        nextday: 次日
+      filled: '{1} 树脂已恢复到 {0} 个，记得及时清理哦！'
+      overflow: '{0} 你的树脂已经满了，记得及时清理哦！'
+    msg2:
+      overflow: 树脂已溢出 {0} 个
+      status: 
+        content: 树脂已恢复到 {0} 个{1}
+        filled: ，记得及时清理哦！
