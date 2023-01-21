@@ -4,12 +4,13 @@ commands:
     msg: 
       errorNum: 错误的树脂数量，上限为 160 个
       errorMany: 短时间内请不要重复提交
+      errorOver: 你输入的树脂已经是或者超过预设的 {0} 个啦，先去清理吧！
       saved: 
         content: 保存成功！你当前树脂为 {0} 个。\n将在{2} {3} 时 {4} 分恢复到 {1} 个并提醒你。
         today: 当日
         nextday: 次日
       filled: '{1} 树脂已恢复到 {0} 个，记得及时清理哦！'
-      overflow: '{0} 你的树脂已经满了，记得及时清理哦！'
+      overflow: '{0} 你的树脂已经满了，记得及时清理哦！（如果已经清理，请及时更新当前树脂数量）'
     msg2:
       overflow: 树脂已溢出 {0} 个
       status: 

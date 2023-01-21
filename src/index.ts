@@ -1,4 +1,5 @@
-import { Context, Schema, h } from 'koishi'
+import { Context, Schema, Session, h } from 'koishi'
+
 
 declare module 'koishi' {
   interface User {
@@ -27,13 +28,20 @@ export interface Config {
 }
 
 export const Config: Schema<Config> = Schema.object({
-  noticeThreshold: Schema.number().min(0).max(160).default(150).description('恢复到该数量时提醒'),
-  recordNotice: Schema.boolean().default(false).description('溢出 1 小时 (160) 后提醒更新记录')
+  noticeThreshold: Schema.number().min(130).max(160).default(150).description('恢复到该数量时提醒'),
+  recordNotice: Schema.boolean().default(false).description('溢出 1 小时后提醒更新记录')
 })
 
 export function apply(ctx: Context, config: Config) {
   const logger = ctx.logger('genshin-resin')
-  
+  const resinInterval: number = 8
+  const taksPool = []
+  const newTask = (session: Session, id, channelAt, time: number) => {
+    time = time * 60 * 1000
+    if (config.recordNotice)
+      taksPool[id] = ctx.setTimeout(() => { session.send(session.text('commands.resin.msg.overflow', [channelAt ? '' : h('at', { id: channelAt })])) }, time + ((160 - config.noticeThreshold) * resinInterval * 60000) + 3600000)
+    taksPool[id] = ctx.setTimeout(() => { session.send(session.text('commands.resin.msg.filled', [channelAt ? '' : h('at', { id: channelAt })])) }, time)
+  }
 
   ctx.i18n.define('zh', require('./i18n/zh'))
 
@@ -41,19 +49,45 @@ export function apply(ctx: Context, config: Config) {
     resin: 'json'
   })
 
+  ctx.before('attach-user', (session, fields) => {
+    fields.add('id')
+    fields.add('resin')
+  })
+
+  ctx.on('message', (session: Session<'id' | 'resin'>) => {
+    
+  })
+
+  ctx.on('attach-user', async (session) => {
+    const userResins = await ctx.database.get('user', { resin: { $exists: true } })
+    let count = 0
+    userResins.forEach(usrRow => {
+      const grow = Math.round(usrRow.resin.updateNumber + calcIntervalNumber(new Date(), new Date(usrRow.resin.updateAt)))
+      if (grow < config.noticeThreshold) {
+        newTask(session, usrRow.id, session.subtype === 'private' ? '' : usrRow.id, config.noticeThreshold - grow)
+        count++
+      }
+    })
+    if (count > 0)
+      logger.info(`已从数据库中恢复 ${count} 个未完成的 resin 计时任务`)
+    else
+      logger.info('未从数据库中找到需要恢复的任务')
+  })
+
   ctx.command('resin [number]')
     .alias('树脂', '体力', 'tili', 'tl')
-    .userFields(['resin'])
+    .userFields(['id', 'resin'])
     .action(async ({ session }, _resin) => {
       if (_resin) {
         const resin = Math.trunc(+_resin)
         if (resin > 160)
           return session.text('commands.resin.msg.errorNum')
-        const resinInterval: number = 8
+        if (resin >= config.noticeThreshold)
+          return session.text('commands.resin.msg.errorOver', [config.noticeThreshold])
         const now = Date.now()
-        // if (session.user.resin.updateAt && new Date(now).getHours() - new Date(session.user.resin.updateAt).getHours() <= 1) {
-        //   return session.text('commands.resin.msg.errorMany')
-        // }
+        if (session.user.resin.updateAt && new Date(now).getHours() - new Date(session.user.resin.updateAt).getHours() <= 1) {
+          return session.text('commands.resin.msg.errorMany')
+        }
         const durationTime = (config.noticeThreshold - resin) * resinInterval * 60 * 1000 //ms
         const futureTime = new Date(now + durationTime)
         const priv = session.subtype === 'prevate'
@@ -67,17 +101,11 @@ export function apply(ctx: Context, config: Config) {
             'commands.resin.msg.saved.content',
             [resin, config.noticeThreshold, futureTime.getDay() - new Date(now).getDay() === 0 ? today : nextday, futureTime.getHours(), futureTime.getMinutes()]
           ))
-        if (config.recordNotice) {
-          ctx.setTimeout(() => {
-            session.send(session.text('commands.resin.msg.overflow', [config.noticeThreshold, priv ? '' : h('at', { id: session.userId })]))
-          }, durationTime + ((160 - config.noticeThreshold) * resinInterval))
-        }
-        ctx.setTimeout(() => {
-          session.send(session.text('commands.resin.msg.filled', [config.noticeThreshold, priv ? '' : h('at', { id: session.userId })]))
-        }, durationTime)
+        newTask(session, session.user.id, session.subtype === 'private' ? '' : session.userId, durationTime)
       } else {
         const created = Math.round(session.user.resin.updateNumber + calcIntervalNumber(new Date(), new Date(session.user.resin.updateAt)))
         if (created >= 160) {
+          session.user.resin.updateNumber = 160
           session.send(session.text('commands.resin.msg2.overflow', [created - 160]))
         } else {
           session.send(session.text('commands.resin.msg2.status.content', [created, created >= 120 ? session.text('commands.resin.msg2.status.filled') : '']))
