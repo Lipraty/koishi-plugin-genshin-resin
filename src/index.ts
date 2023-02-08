@@ -1,6 +1,5 @@
 import { Context, Schema, Session, h } from 'koishi'
 
-
 declare module 'koishi' {
   interface User {
     resin: ResinDatabase
@@ -13,6 +12,8 @@ interface ResinDatabase {
 }
 
 export const name = 'genshin-resin'
+
+export const using = ['kvdata']
 
 export const usage = `
 手动记录的你树脂恢复情况
@@ -55,23 +56,22 @@ export function apply(ctx: Context, config: Config) {
   })
 
   ctx.on('message', (session: Session<'id' | 'resin'>) => {
-    
   })
 
   ctx.on('attach-user', async (session) => {
-    const userResins = await ctx.database.get('user', { resin: { $exists: true } })
-    let count = 0
-    userResins.forEach(usrRow => {
-      const grow = Math.round(usrRow.resin.updateNumber + calcIntervalNumber(new Date(), new Date(usrRow.resin.updateAt)))
-      if (grow < config.noticeThreshold) {
-        newTask(session, usrRow.id, session.subtype === 'private' ? '' : usrRow.id, config.noticeThreshold - grow)
-        count++
-      }
-    })
-    if (count > 0)
-      logger.info(`已从数据库中恢复 ${count} 个未完成的 resin 计时任务`)
-    else
-      logger.info('未从数据库中找到需要恢复的任务')
+    // const userResins = await ctx.database.get('user', { resin: { $exists: true } })
+    // let count = 0
+    // userResins.forEach(usrRow => {
+    //   const grow = Math.round(usrRow.resin.updateNumber + calcIntervalNumber(new Date(), new Date(usrRow.resin.updateAt)))
+    //   if (grow < config.noticeThreshold) {
+    //     newTask(session, usrRow.id, session.subtype === 'private' ? '' : usrRow.id, config.noticeThreshold - grow)
+    //     count++
+    //   }
+    // })
+    // if (count > 0)
+    //   logger.info(`已从数据库中恢复 ${count} 个未完成的 resin 计时任务`)
+    // else
+    //   logger.info('未从数据库中找到需要恢复的任务')
   })
 
   ctx.command('resin [number]')
