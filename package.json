@@ -13,7 +13,10 @@
   "license": "MIT",
   "koishi": {
     "description": {
-      "zh": "记录并计算树脂溢出时间，无需 Cookie 等配置"
+      "zh": "🍃记录并计算树脂溢出时间，无需 Cookie 等配置"
+    },
+    "service": {
+      "required": ["database"]
     }
   },
   "scripts": {},
