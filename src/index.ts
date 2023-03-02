@@ -1,22 +1,26 @@
-import { Context, Schema, Session, h } from 'koishi'
+import { Context, Schema, h } from 'koishi'
+import { } from '@koishijs/plugin-help'
+import { } from '@koishijs/cache'
 
-declare module 'koishi' {
-  interface User {
-    resin: ResinDatabase
-  }
+interface GenshinResinOptions {
+  platform: string
+  userId: string
+  resin: number
+  updateAt: number
 }
 
-interface ResinDatabase {
-  updateNumber: number
-  updateAt: number
+declare module '@koishijs/cache' {
+  interface Tables {
+    'genshin-resin': GenshinResinOptions
+  }
 }
 
 export const name = 'genshin-resin'
 
-export const using = ['kvdata']
+export const using = ['cache']
 
 export const usage = `
-手动记录的你树脂恢复情况
+记录的你树脂恢复情况
 
 请先发送例如 \`resin 10\` 命令来设置你当前的树脂，在超过阈值之后将发送消息提醒
 
@@ -24,97 +28,117 @@ export const usage = `
 `
 
 export interface Config {
-  noticeThreshold: number
-  recordNotice: boolean
+  alias: string[]
+  trigger: number
+  overflow: boolean
 }
 
 export const Config: Schema<Config> = Schema.object({
-  noticeThreshold: Schema.number().min(130).max(160).default(150).description('恢复到该数量时提醒'),
-  recordNotice: Schema.boolean().default(false).description('溢出 1 小时后提醒更新记录')
+  alias: Schema.array(String).default(['体力', '树脂']).description('额外的命令别名'),
+  trigger: Schema.number().min(130).max(160).default(150).description('恢复到该数量时提醒'),
+  overflow: Schema.boolean().default(false).description('溢出 1 小时后提醒更新记录')
 })
 
 export function apply(ctx: Context, config: Config) {
+  let init = true
   const logger = ctx.logger('genshin-resin')
-  const resinInterval: number = 8
-  const taksPool = []
-  const newTask = (session: Session, id, channelAt, time: number) => {
-    time = time * 60 * 1000
-    if (config.recordNotice)
-      taksPool[id] = ctx.setTimeout(() => { session.send(session.text('commands.resin.msg.overflow', [channelAt ? '' : h('at', { id: channelAt })])) }, time + ((160 - config.noticeThreshold) * resinInterval * 60000) + 3600000)
-    taksPool[id] = ctx.setTimeout(() => { session.send(session.text('commands.resin.msg.filled', [channelAt ? '' : h('at', { id: channelAt })])) }, time)
-  }
-
+  const cache = ctx.cache('genshin-resin')
+  const usersTemp = []
   ctx.i18n.define('zh', require('./i18n/zh'))
 
-  ctx.model.extend('user', {
-    resin: 'json'
+  const resinInterval: number = 8
+  const taskPool: Record<string, () => boolean> = {}
+  function task(taskId: string, newTask: any) {
+    if (taskPool[taskId]) taskPool[taskId]()
+    taskPool[taskId] = newTask
+  }
+  function calcIntervalNumber(newTime: Date, oldTime: Date) {
+    const interval = newTime.getTime() - oldTime.getTime()
+    return (interval / 1000 / 60) / 8
+  }
+
+  ctx.on('ready', () => { init = true })
+
+  ctx.on('message', (session) => {
+    if (init) {
+      init = false
+      // const allTask = cache.all()
+      // if (allTask.length > 0) {
+      //   let count = 0
+      //   allTask.forEach(t => {
+      //     const num = calcIntervalNumber(new Date, new Date(t.updateAt))
+      //     if (num < config.trigger - 20) {
+      //       session.execute('resin -S ' + num)
+      //       count++
+      //     }
+      //   })
+      //   logger.info(`已恢复 ${count} 个任务`)
+      // }
+    }
   })
 
-  ctx.before('attach-user', (session, fields) => {
-    fields.add('id')
-    fields.add('resin')
-  })
+  ctx.command('resin [resin:number]')
+    .alias('tili', 'tl', ...config.alias)
+    .option('silent', '-S', { hidden: true })
+    .userFields(['id'])
+    .action(async ({ session, options }, resin) => {
+      const userResins = await cache.get(session.userId)
+      if (resin) {
+        resin = Math.trunc(resin)
 
-  ctx.on('message', (session: Session<'id' | 'resin'>) => {
-  })
+        if (resin > 160) return session.text('.max')
+        if (resin >= config.trigger - 20) return session.text('.over', [config.trigger])
+        if (usersTemp.includes(session.user.id)) return session.text('.many')
 
-  ctx.on('attach-user', async (session) => {
-    // const userResins = await ctx.database.get('user', { resin: { $exists: true } })
-    // let count = 0
-    // userResins.forEach(usrRow => {
-    //   const grow = Math.round(usrRow.resin.updateNumber + calcIntervalNumber(new Date(), new Date(usrRow.resin.updateAt)))
-    //   if (grow < config.noticeThreshold) {
-    //     newTask(session, usrRow.id, session.subtype === 'private' ? '' : usrRow.id, config.noticeThreshold - grow)
-    //     count++
-    //   }
-    // })
-    // if (count > 0)
-    //   logger.info(`已从数据库中恢复 ${count} 个未完成的 resin 计时任务`)
-    // else
-    //   logger.info('未从数据库中找到需要恢复的任务')
-  })
-
-  ctx.command('resin [number]')
-    .alias('树脂', '体力', 'tili', 'tl')
-    .userFields(['id', 'resin'])
-    .action(async ({ session }, _resin) => {
-      if (_resin) {
-        const resin = Math.trunc(+_resin)
-        if (resin > 160)
-          return session.text('commands.resin.msg.errorNum')
-        if (resin >= config.noticeThreshold)
-          return session.text('commands.resin.msg.errorOver', [config.noticeThreshold])
         const now = Date.now()
-        if (session.user.resin.updateAt && new Date(now).getHours() - new Date(session.user.resin.updateAt).getHours() <= 1) {
-          return session.text('commands.resin.msg.errorMany')
-        }
-        const durationTime = (config.noticeThreshold - resin) * resinInterval * 60 * 1000 //ms
+        const durationTime = (config.trigger - resin) * resinInterval * 60000 //ms
         const futureTime = new Date(now + durationTime)
-        const priv = session.subtype === 'prevate'
-        session.user.resin = {
-          updateNumber: resin,
+        const prvt = session.subtype === 'prevate'
+        const today = session.text('.saved.today'), nextday = session.text('.saved.nextday')
+
+        //duplicate lock
+        usersTemp.push(session.user.id)
+        ctx.setTimeout(() => { if (usersTemp.length > 0) usersTemp.splice(usersTemp.findIndex(e => e === session.user.id), 1) }, 3600000) // No repeats allowed within 1 hour
+        //cache some time's resin logger
+        cache.set(session.userId, {
+          platform: session.platform,
+          userId: session.userId,
+          resin,
           updateAt: now
+        }, durationTime + ((160 - config.trigger) * resinInterval * 60000) + 3600000)
+        //set remind message task
+        task(session.userId, ctx.setTimeout(() => {
+          session.send(session.text('.reached', [prvt ? '' : h('at', { id: session.userId }), config.trigger]))
+        }, durationTime))
+        //set overflow remind message task
+        if (config.overflow)
+          task(`overflow:${session.userId}`, ctx.setTimeout(() => {
+            session.send(session.text('.filled', [prvt ? '' : h('at', { id: session.userId })]))
+          }, durationTime + (160 - config.trigger) * resinInterval * 60000))
+
+        if (!options.silent) {
+          await session.send(
+            session.text(
+              `.saved.${userResins ? 'updated' : 'content'}`,
+              [resin, config.trigger, futureTime.getDay() - new Date(now).getDay() === 0 ? today : nextday, futureTime.getHours(), futureTime.getMinutes()]
+            ))
         }
-        const today = session.text('commands.resin.msg.saved.today'), nextday = session.text('commands.resin.msg.saved.nextday')
-        session.send(
-          session.text(
-            'commands.resin.msg.saved.content',
-            [resin, config.noticeThreshold, futureTime.getDay() - new Date(now).getDay() === 0 ? today : nextday, futureTime.getHours(), futureTime.getMinutes()]
-          ))
-        newTask(session, session.user.id, session.subtype === 'private' ? '' : session.userId, durationTime)
       } else {
-        const created = Math.round(session.user.resin.updateNumber + calcIntervalNumber(new Date(), new Date(session.user.resin.updateAt)))
-        if (created >= 160) {
-          session.user.resin.updateNumber = 160
-          session.send(session.text('commands.resin.msg2.overflow', [created - 160]))
+        if (!userResins) return session.text('.status.none')
+        const status = Math.round(userResins.resin + calcIntervalNumber(new Date(), new Date(userResins.updateAt)))
+        if (status >= 160) {
+          session.send(session.text('.overflow', [status - 160]))
         } else {
-          session.send(session.text('commands.resin.msg2.status.content', [created, created >= 120 ? session.text('commands.resin.msg2.status.filled') : '']))
+          session.send(session.text('.status.content', [status, status >= 120 ? session.text('.status.filled') : '']))
         }
       }
     })
-}
 
-function calcIntervalNumber(newTime: Date, oldTime: Date) {
-  const interval = newTime.getTime() - oldTime.getTime()
-  return (interval / 1000 / 60) / 8
+  ctx.on('dispose', () => {
+    init = true
+    //remove all task
+    for (let task in usersTemp) {
+      usersTemp[task]()
+    }
+  })
 }
